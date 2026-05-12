@@ -1,14 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
 
-const MONGODB_URI = 'mongodb+srv://chaudharymuzamil03_db_user:BNE5t6QiwqYnKtUG@cluster0.fiou20r.mongodb.net/skillswap?retryWrites=true&w=majority';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/skillswap';
 
 // ============================================
 // SCHEMAS
@@ -178,7 +181,7 @@ function startServer() {
                 const adminUser = new User({
                     name: 'System Admin',
                     email: 'admin@skillswap.com',
-                    password: 'admin123',
+                    password: 'Admin-011',
                     role: 'admin'
                 });
                 await adminUser.save();
@@ -1232,7 +1235,7 @@ function startServer() {
     });
 
     // ============================================
-    // NEW ROUTE: GET ALL REVIEWS - GLOBAL FEED - ADDED HERE
+    // NEW ROUTE: GET ALL REVIEWS - GLOBAL FEED
     // ============================================
     app.get('/api/reviews/all', async (req, res) => {
         try {
@@ -1254,6 +1257,37 @@ function startServer() {
             
         } catch (error) {
             console.error('❌ Fetch all reviews error:', error);
+            res.status(500).json({ 
+                success: false, 
+                message: error.message 
+            });
+        }
+    });
+
+    // ============================================
+    // NEW ROUTE: GET REVIEWS GIVEN BY USER
+    // ============================================
+    app.get('/api/users/:userId/given-reviews', async (req, res) => {
+        try {
+            const { userId } = req.params;
+            
+            console.log(`📤 Fetching reviews given by user: ${userId}`);
+            
+            const reviews = await Review.find({ fromUser: userId })
+                .populate('toUser', 'name email')
+                .populate('sessionId')
+                .populate('swapRequestId')
+                .sort({ createdAt: -1 });
+            
+            console.log(`✅ Found ${reviews.length} reviews given by user ${userId}`);
+            
+            res.json({
+                success: true,
+                reviews
+            });
+            
+        } catch (error) {
+            console.error('❌ Fetch given reviews error:', error);
             res.status(500).json({ 
                 success: false, 
                 message: error.message 
@@ -1474,7 +1508,428 @@ function startServer() {
     });
 
     // ============================================
-    // ADMIN ROUTES
+    // NEW ADMIN ROUTES - SKILL MANAGEMENT
+    // ============================================
+
+    app.get('/api/admin/skills/all', async (req, res) => {
+        try {
+            console.log('📊 Fetching all skills for admin...');
+            
+            const users = await User.find({});
+            
+            const skillMap = new Map();
+            
+            users.forEach(user => {
+                // Count teach skills
+                user.teachSkills?.forEach(skill => {
+                    if (!skillMap.has(skill)) {
+                        skillMap.set(skill, { name: skill, teachCount: 0, learnCount: 0, count: 0 });
+                    }
+                    const data = skillMap.get(skill);
+                    data.teachCount++;
+                    data.count++;
+                });
+                
+                // Count learn skills
+                user.learnSkills?.forEach(skill => {
+                    if (!skillMap.has(skill)) {
+                        skillMap.set(skill, { name: skill, teachCount: 0, learnCount: 0, count: 0 });
+                    }
+                    const data = skillMap.get(skill);
+                    data.learnCount++;
+                    data.count++;
+                });
+            });
+            
+            const skills = Array.from(skillMap.values()).sort((a, b) => b.count - a.count);
+            
+            // Calculate stats
+            const stats = {
+                totalSkills: skills.length,
+                mostTaught: skills.sort((a, b) => b.teachCount - a.teachCount)[0]?.name || 'None',
+                mostLearned: skills.sort((a, b) => b.learnCount - a.learnCount)[0]?.name || 'None'
+            };
+            
+            console.log(`✅ Found ${skills.length} unique skills`);
+            
+            res.json({ success: true, skills, stats });
+        } catch (error) {
+            console.error('❌ Fetch skills error:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+
+    app.post('/api/admin/skills/remove', async (req, res) => {
+        try {
+            const { skill } = req.body;
+            
+            if (!skill) {
+                return res.status(400).json({ success: false, message: 'Skill name is required' });
+            }
+            
+            console.log(`🗑️ Removing skill "${skill}" from all users...`);
+            
+            // Remove skill from all users' teachSkills and learnSkills
+            await User.updateMany(
+                { teachSkills: skill },
+                { $pull: { teachSkills: skill } }
+            );
+            
+            await User.updateMany(
+                { learnSkills: skill },
+                { $pull: { learnSkills: skill } }
+            );
+            
+            console.log(`✅ Skill "${skill}" removed successfully`);
+            
+            res.json({ success: true, message: `Skill "${skill}" removed from all users` });
+        } catch (error) {
+            console.error('❌ Remove skill error:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+
+    // ============================================
+    // NEW ADMIN ROUTES - TRANSACTIONS
+    // ============================================
+
+    app.get('/api/admin/transactions/all', async (req, res) => {
+        try {
+            console.log('💰 Fetching all transactions for admin...');
+            
+            const transactions = await Transaction.find({})
+                .populate('userId', 'name email')
+                .populate('relatedUser', 'name email')
+                .sort({ createdAt: -1 })
+                .limit(500);
+            
+            // Calculate stats
+            let totalCredits = 0;
+            let totalEarned = 0;
+            let totalSpent = 0;
+            
+            const users = await User.find({});
+            users.forEach(user => {
+                totalCredits += user.skillCredits || 0;
+            });
+            
+            transactions.forEach(t => {
+                if (t.type === 'earned' || t.type === 'bonus') {
+                    totalEarned += t.amount;
+                } else if (t.type === 'spent') {
+                    totalSpent += Math.abs(t.amount);
+                }
+            });
+            
+            const formattedTransactions = transactions.map(t => ({
+                _id: t._id,
+                userName: t.userId?.name || 'Unknown',
+                userId: t.userId?._id,
+                type: t.type,
+                amount: t.amount,
+                description: t.description,
+                relatedUserName: t.relatedUser?.name || null,
+                createdAt: t.createdAt
+            }));
+            
+            console.log(`✅ Found ${transactions.length} transactions`);
+            
+            res.json({
+                success: true,
+                transactions: formattedTransactions,
+                stats: {
+                    totalTransactions: transactions.length,
+                    totalCredits,
+                    totalEarned,
+                    totalSpent
+                }
+            });
+        } catch (error) {
+            console.error('❌ Fetch all transactions error:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+
+    // ============================================
+    // NEW ADMIN ROUTES - REPORTS
+    // ============================================
+
+            // ============================================
+    // FIXED ADMIN ROUTES - REPORTS WITH LIVE DATA
+    // ============================================
+
+    app.get('/api/admin/reports', async (req, res) => {
+        try {
+            const { range } = req.query;
+            
+            console.log(`📈 Generating reports for range: ${range}`);
+            
+            // Calculate date range
+            const now = new Date();
+            let startDate = new Date();
+            
+            switch(range) {
+                case 'day':
+                    startDate.setDate(now.getDate() - 1);
+                    break;
+                case 'week':
+                    startDate.setDate(now.getDate() - 7);
+                    break;
+                case 'month':
+                    startDate.setMonth(now.getMonth() - 1);
+                    break;
+                case 'year':
+                    startDate.setFullYear(now.getFullYear() - 1);
+                    break;
+                default:
+                    startDate = new Date(0); // beginning of time
+            }
+            
+            console.log(`📅 Date range: ${startDate} to ${now}`);
+            
+            // Get user stats
+            const newUsers = await User.countDocuments({ createdAt: { $gte: startDate } });
+            const totalUsers = await User.countDocuments();
+            
+            // Get swap stats
+            const newSwaps = await SwapRequest.countDocuments({ createdAt: { $gte: startDate } });
+            const pendingSwaps = await SwapRequest.countDocuments({ status: 'pending' });
+            
+            // Get session stats
+            const completedSessions = await Session.countDocuments({ 
+                status: 'completed',
+                createdAt: { $gte: startDate }
+            });
+            const totalSessions = await Session.countDocuments({ status: 'completed' });
+            const completionRate = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+            
+            // Get ALL users to analyze skills
+            const users = await User.find({});
+            
+            // Create maps to count skills
+            const teachSkillMap = new Map();
+            const learnSkillMap = new Map();
+            const allSkillMap = new Map();
+            
+            users.forEach(user => {
+                // Count teach skills
+                user.teachSkills?.forEach(skill => {
+                    teachSkillMap.set(skill, (teachSkillMap.get(skill) || 0) + 1);
+                    allSkillMap.set(skill, (allSkillMap.get(skill) || 0) + 1);
+                });
+                
+                // Count learn skills
+                user.learnSkills?.forEach(skill => {
+                    learnSkillMap.set(skill, (learnSkillMap.get(skill) || 0) + 1);
+                    allSkillMap.set(skill, (allSkillMap.get(skill) || 0) + 1);
+                });
+            });
+            
+            // Get top 5 most taught skills
+            const topTaughtSkills = Array.from(teachSkillMap.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([skill, count]) => ({ label: skill, value: count }));
+            
+            // Get top 5 most learned skills
+            const topLearnedSkills = Array.from(learnSkillMap.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([skill, count]) => ({ label: skill, value: count }));
+            
+            // Get top 5 most popular skills overall
+            const topSkills = Array.from(allSkillMap.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([skill, count]) => ({ label: skill, value: count }));
+            
+            // Calculate most taught and most learned overall
+            const mostTaught = topTaughtSkills[0]?.label || 'None';
+            const mostLearned = topLearnedSkills[0]?.label || 'None';
+            
+            // ============ FIXED: REVIEW STATS ============
+            // Get ALL reviews (no date filter for totals)
+            const allReviews = await Review.find({})
+                .populate('fromUser', 'name')
+                .populate('toUser', 'name');
+            
+            const totalReviews = allReviews.length;
+            
+            // Get reviews in selected date range
+            const reviewsInRange = await Review.find({ 
+                createdAt: { $gte: startDate } 
+            });
+            const newReviews = reviewsInRange.length;
+            
+            // Calculate average rating from ALL reviews
+            const avgRating = totalReviews > 0 
+                ? (allReviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
+                : '0.0';
+            
+            // Calculate rating distribution from ALL reviews
+            const ratingCounts = {
+                5: allReviews.filter(r => r.rating === 5).length,
+                4: allReviews.filter(r => r.rating === 4).length,
+                3: allReviews.filter(r => r.rating === 3).length,
+                2: allReviews.filter(r => r.rating === 2).length,
+                1: allReviews.filter(r => r.rating === 1).length
+            };
+            
+            console.log(`⭐ Review stats - Total: ${totalReviews}, New: ${newReviews}, Avg: ${avgRating}`);
+            // ==============================================
+            
+            // Get credit totals
+            let totalEarned = 0;
+            let totalSpent = 0;
+            
+            const transactions = await Transaction.find({});
+            transactions.forEach(t => {
+                if (t.type === 'earned' || t.type === 'bonus') {
+                    totalEarned += t.amount;
+                } else if (t.type === 'spent') {
+                    totalSpent += Math.abs(t.amount);
+                }
+            });
+            
+            // Generate user growth data (last 7 days)
+            const userGrowth = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                date.setHours(0, 0, 0, 0);
+                
+                const nextDate = new Date(date);
+                nextDate.setDate(date.getDate() + 1);
+                
+                const count = await User.countDocuments({
+                    createdAt: { $gte: date, $lt: nextDate }
+                });
+                
+                const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                userGrowth.push({
+                    label: days[date.getDay()],
+                    value: count
+                });
+            }
+            
+            // Generate session data for last 7 days
+            const sessionData = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                date.setHours(0, 0, 0, 0);
+                
+                const nextDate = new Date(date);
+                nextDate.setDate(date.getDate() + 1);
+                
+                const count = await Session.countDocuments({
+                    status: 'completed',
+                    createdAt: { $gte: date, $lt: nextDate }
+                });
+                
+                const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                sessionData.push({
+                    label: days[date.getDay()],
+                    value: count
+                });
+            }
+            
+            // Send ALL data to frontend
+            res.json({
+                success: true,
+                // Stats cards (date filtered)
+                newUsers,
+                totalUsers,
+                newSwaps,
+                pendingSwaps,
+                completedSessions,
+                totalSessions,
+                completionRate,
+                
+                // REVIEW STATS - FIXED
+                totalReviews,
+                newReviews,
+                avgRating,
+                
+                // Other totals
+                totalEarned,
+                totalSpent,
+                mostTaught,
+                mostLearned,
+                
+                // Charts data
+                userGrowth,
+                sessionData,
+                creditFlow: [
+                    { label: 'Earned', value: totalEarned },
+                    { label: 'Spent', value: totalSpent }
+                ],
+                popularSkills: topSkills,
+                topTaughtSkills,
+                topLearnedSkills,
+                ratingDistribution: [
+                    { label: '5 Stars', value: ratingCounts[5] },
+                    { label: '4 Stars', value: ratingCounts[4] },
+                    { label: '3 Stars', value: ratingCounts[3] },
+                    { label: '2 Stars', value: ratingCounts[2] },
+                    { label: '1 Star', value: ratingCounts[1] }
+                ]
+            });
+            
+        } catch (error) {
+            console.error('❌ Generate reports error:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+    // ============================================
+    // NEW ADMIN ROUTES - SETTINGS
+    // ============================================
+
+    // Simple in-memory settings (you might want to store these in a database collection)
+    let systemSettings = {
+        creditPerSession: 10,
+        maxSessionsPerSkill: 20,
+        minReputationForAdmin: 50,
+        enableReviews: true,
+        enableChat: true,
+        maintenanceMode: false,
+        sessionDurationMin: 30,
+        sessionDurationMax: 120,
+        creditBonusFirstReview: 5
+    };
+
+    app.get('/api/admin/settings', async (req, res) => {
+        try {
+            console.log('⚙️ Fetching system settings');
+            res.json({ success: true, settings: systemSettings });
+        } catch (error) {
+            console.error('❌ Fetch settings error:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+
+    app.put('/api/admin/settings', async (req, res) => {
+        try {
+            const newSettings = req.body;
+            console.log('⚙️ Updating system settings:', newSettings);
+            
+            // Validate settings
+            if (newSettings.creditPerSession < 1) {
+                return res.status(400).json({ success: false, message: 'Credit per session must be at least 1' });
+            }
+            
+            systemSettings = { ...systemSettings, ...newSettings };
+            
+            console.log('✅ Settings updated successfully');
+            res.json({ success: true, message: 'Settings updated successfully', settings: systemSettings });
+        } catch (error) {
+            console.error('❌ Update settings error:', error);
+            res.status(500).json({ success: false, message: error.message });
+        }
+    });
+
+    // ============================================
+    // ADMIN ROUTES (EXISTING)
     // ============================================
 
     app.get('/api/admin/users', async (req, res) => {
@@ -1622,7 +2077,7 @@ function startServer() {
 
     app.listen(PORT, () => {
         console.log(`🚀 Server running on http://localhost:${PORT}`);
-        console.log(`📊 MongoDB: Connected to Atlas`);
+        console.log(`📊 MongoDB: Connected to ${mongoose.connection.host}/${mongoose.connection.name}`);
         createDefaultAdmin();
         console.log(`✅ COMPLETE SYSTEM READY`);
         console.log(`\n📚 API Endpoints:`);
@@ -1637,7 +2092,7 @@ function startServer() {
         console.log(`   📅 Sessions: POST /api/sessions, GET /api/users/:userId/sessions, PUT /api/sessions/:sessionId/complete`);
         console.log(`   📊 Progress: GET /api/skill-progress/check, GET /api/skill-progress/:swapRequestId`);
         console.log(`   🔗 Meeting Link: https://meet.google.com/new`);
-        console.log(`   ⭐ Reviews: POST /api/reviews, GET /api/users/:userId/reviews, GET /api/reviews/all, GET /api/users/:userId/can-review/:targetUserId`);
-        console.log(`   👑 Admin: GET /api/admin/users, GET /api/admin/stats, PUT /api/admin/users/:id, DELETE /api/admin/users/:id`);
+        console.log(`   ⭐ Reviews: POST /api/reviews, GET /api/users/:userId/reviews, GET /api/reviews/all, GET /api/users/:userId/given-reviews, GET /api/users/:userId/can-review/:targetUserId`);
+        console.log(`   👑 Admin: GET /api/admin/users, GET /api/admin/stats, PUT /api/admin/users/:id, DELETE /api/admin/users/:id, PUT /api/admin/users/:id/skills, GET /api/admin/skills/all, POST /api/admin/skills/remove, GET /api/admin/transactions/all, GET /api/admin/reports, GET /api/admin/settings, PUT /api/admin/settings`);
     });
 }

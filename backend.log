@@ -1,0 +1,29 @@
+[dotenv@17.2.4] injecting env (3) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+🔄 Connecting to MongoDB...
+(node:50146) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✅ MongoDB Connected!
+🚀 Server running on http://localhost:5000
+📊 MongoDB: Connected to localhost/skillswap
+✅ COMPLETE SYSTEM READY
+
+📚 API Endpoints:
+   🔐 Auth: POST /api/register, POST /api/login
+   🔑 Password: PUT /api/admin/users/:id/password (admin reset)
+   🔑 Password: PUT /api/users/:id/change-password (user change)
+   👥 Users: GET /api/users, PUT /api/users/:id/skills
+   🤝 Matching: GET /api/matching/users, POST /api/matching/request
+   🔄 Swap: GET /api/users/:userId/swap-requests, PUT /api/swap-requests/:requestId
+   💰 Credits: GET /api/users/:userId/transactions, GET /api/users/:userId/credit-stats
+   💬 Chat: GET /api/users/:userId/chats, POST /api/chats, GET /api/chats/:chatId/messages, POST /api/chats/:chatId/messages
+   📅 Sessions: POST /api/sessions, GET /api/users/:userId/sessions, PUT /api/sessions/:sessionId/complete
+   📊 Progress: GET /api/skill-progress/check, GET /api/skill-progress/:swapRequestId
+   🔗 Meeting Link: https://meet.google.com/new
+   ⭐ Reviews: POST /api/reviews, GET /api/users/:userId/reviews, GET /api/reviews/all, GET /api/users/:userId/given-reviews, GET /api/users/:userId/can-review/:targetUserId
+   👑 Admin: GET /api/admin/users, GET /api/admin/stats, PUT /api/admin/users/:id, DELETE /api/admin/users/:id, PUT /api/admin/users/:id/skills, GET /api/admin/skills/all, POST /api/admin/skills/remove, GET /api/admin/transactions/all, GET /api/admin/reports, GET /api/admin/settings, PUT /api/admin/settings
+✅ Default admin created: admin@skillswap.com / admin123
+❌ Route not found: GET /favicon.ico
+📝 Registration attempt: { name: 'Zulqarnain Haider', email: 'zulqarnainhaiderr05@gmail.com' }
+✅ User registered: zulqarnainhaiderr05@gmail.com
+🔐 Login attempt: zulqarnainhaiderr05@gmail.com
+✅ Login successful: zulqarnainhaiderr05@gmail.com

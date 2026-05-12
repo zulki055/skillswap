@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Login from './components/auth/login'
 import Dashboard from './pages/Dashboard'
+import AdminDashboard from './pages/AdminDashboard' // Import admin dashboard
 import './styles/App.css'
 
 function App() {
@@ -52,7 +53,7 @@ function App() {
   if (isLoading) {
     return (
       <div className="App" style={{
-        backgroundImage: 'url(/images/img%204.jpg)',
+        backgroundImage: 'url(/images/robo2.jpg)',
         backgroundColor: '#f0f8ff',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
@@ -83,7 +84,7 @@ function App() {
       style={{
         background: `
           linear-gradient(rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.30)),
-          url(/images/img%204.jpg)
+          url(/images/robo.jpg)
         `,
         backgroundColor: '#f0f8ff',
         backgroundSize: 'cover',
@@ -101,8 +102,13 @@ function App() {
       }}
     >
       {currentPage === 'login' && <Login onLogin={handleLogin} />}
-      {currentPage === 'dashboard' && (
-        <Dashboard user={user} onLogout={handleLogout} />
+      {currentPage === 'dashboard' && user && (
+        // Check if user is admin
+        user.role === 'admin' ? (
+          <AdminDashboard user={user} onLogout={handleLogout} />
+        ) : (
+          <Dashboard user={user} onLogout={handleLogout} />
+        )
       )}
     </div>
   )
